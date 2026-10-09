@@ -40,8 +40,11 @@ static void http_prepare(struct http_conn *c, int root) {
     http_error(c, 400, "Bad Request"); return;
   }
   if (!strcmp(path, "/")) {
-    const char *page = "<!doctype html><title>PocketBox</title><h1>PocketBox M1</h1><p>Offline library prototype</p><a href='/files/welcome.txt'>Welcome file</a>";
-    size_t page_len = strlen(page);
+    struct catalog cat;
+    catalog_load(root, &cat);
+    char page[HTTP_OUT];
+    size_t page_len = catalog_html(&cat, page, sizeof page);
+    if (!page_len) { http_error(c, 500, "Internal Server Error"); return; }
     http_response(c, 200, "OK", "text/html", (long long)page_len);
     if (c->state == 3 || c->out_len + page_len > sizeof c->output) { c->state = 3; return; }
     memcpy(c->output + c->out_len, page, page_len);
