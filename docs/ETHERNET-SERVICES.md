@@ -1,74 +1,44 @@
-# Ethernet Services: external offline service hosts
+# Ethernet connectivity: PocketBox as Wi-Fi access point
 
-Status: **design proposal**, not implemented. Applies only to TL-WR703N and GL-MT300N-V2 Mango.
+Status: architecture decision; hardware implementation pending.
 
-## Goal
+## Core requirement
 
-PocketBox remains an independent offline-first C11 HTTP + Telnet/BBS appliance. Its Ethernet interface may connect to a separate, more capable offline host (Internet-in-a-Box, NAS, retro BBS, educational server, etc.). PocketBox makes curated services discoverable to Wi-Fi clients without requiring an internet connection. Ethernet is **not assumed to be a WAN uplink**.
+**PocketBox is the Wi-Fi access point.** Wi-Fi clients should be able to reach services running on a separate computer connected to PocketBox's Ethernet port. PocketBox does **not** need to understand, enumerate, proxy, or integrate those services. This applies to Internet-in-a-Box, Kiwix, Kolibri, BBS servers, NAS, IRC, HTTP, SSH and arbitrary other services offered by the attached host.
 
-## Integration tiers
+PocketBox's own C11 HTTP portal, local USB library and Telnet/BBS continue to operate independently. Service discovery, catalogs, application-level adapters and proxies are optional future enhancements, **not** requirements for basic Ethernet connectivity.
 
-1. **Link:** show curated local URLs/addresses in the HTTP portal and terminal menus; PocketBox does not proxy content.
-2. **Reach:** allow carefully controlled Wi-Fi-to-Ethernet traffic using OpenWrt network configuration and firewall rules. No implicit internet access or arbitrary forwarding.
-3. **Catalog:** optional read-only adapter to import safe metadata from an external service into PocketBox's own library/BBS file listings. No automatic mirroring of bulk content.
-4. **Proxy (later):** only narrowly scoped, authenticated/allowlisted reverse proxy for specific HTTP services if a real need is proven; prevent SSRF and open-proxy behavior.
+## Preferred topology: simple LAN bridge
 
-## Candidate external services
-
-| Service | Examples | First integration |
-| --- | --- | --- |
-| Offline encyclopedia | Internet-in-a-Box, Kiwix/ZIM | Link + reach |
-| Education | Kolibri, static course server | Link + reach |
-| Retro file archive | FTP/HTTP archive, FILES.BBS, Aminet metadata | Link + catalog |
-| Retro BBS | Mystic, Synchronet, Enigma½ | Reach + terminal link |
-| Storage | NAS with HTTP/FTP/SMB/NFS | HTTP link, metadata adapter later |
-| Communication | IRC, XMPP, local message board, Meshtastic bridge | Reach with explicit ports |
-| Documentation/code | Forgejo, static manuals, Git mirrors | Link + reach |
-| Offline maps | OpenStreetMap tile/map service | Link + reach |
-| Books | Calibre-Web, Project Gutenberg mirror | Link + catalog |
-| Gopher | Gopher service | Terminal links and reach |
-
-PocketBox is not expected to execute these services on the 4 MiB flash WR703N.
-
-## Networking modes
-
-- **Default: routed isolated mode.** PocketBox Wi-Fi is its own subnet. Ethernet attaches to a designated offline service network. Firewall allows only configured destination addresses/ports. PocketBox controls Wi-Fi DHCP; upstream DHCP/DNS must not conflict. No automatic default route to internet.
-- **Optional: bridged mode.** For suitable OpenWrt/driver/AP configurations, bridge Wi-Fi clients to Ethernet. Ensure exactly one DHCP server per broadcast domain. Requires hardware validation.
-- **Offline fallback.** PocketBox HTTP/Telnet and local USB files continue operating when Ethernet host is disconnected.
-- **WR703N:** one physical Ethernet port. **Mango:** distinguish its two Ethernet ports and physical roles through device-specific configuration; do not assume WAN/LAN assignments.
-
-## Suggested config model (illustrative, not parsed yet)
-
-```ini
-[ethernet]
-mode = routed
-service_host = 192.168.77.2
-allow_internet = false
-
-[service.iiab]
-type = web
-title = Internet-in-a-Box
-url = http://192.168.77.2/
-
-[service.bbs]
-type = telnet
-title = Retro BBS
-host = 192.168.77.2
-port = 2324
+```text
+  Wi-Fi clients ))) PocketBox (Wi-Fi AP) --- Ethernet --- external host
+                        |
+                 local PocketBox services
 ```
 
-The service address, port, and path are examples, not IIAB defaults. Configuration must validate addresses, URL schemes, ports and titles; never allow arbitrary proxy destinations.
+- **Default design target:** bridge Wi-Fi AP interface and Ethernet LAN interface into one Layer-2 LAN using OpenWrt network configuration. This makes arbitrary Ethernet-host services reachable without PocketBox-specific application code.
+- **WR703N:** single Ethernet port used as LAN to the external host.
+- **Mango:** designate at least one Ethernet port as LAN, retaining the ability to configure the other separately; verify actual OpenWrt interface mappings.
+- **IP addresses:** either PocketBox runs DHCP for the bridged LAN and the external host uses a static/reserved address, or a deliberate alternative DHCP authority is selected. Never run two conflicting DHCP servers.
+- **DNS:** optional local name for the external host; direct IP access must work without DNS.
+- **No WAN/internet required:** no default internet uplink, captive portal or proxy required. Do not hijack arbitrary DNS/HTTP traffic.
+- **Isolation:** do not bridge into an unknown or untrusted external LAN without reviewing the consequences; Wi-Fi clients can directly access exposed Ethernet-host services. Consider firewalling or a routed alternative for untrusted deployments.
 
-## Acceptance criteria
+## Alternative topology: routed AP
 
-- Service catalog available via HTTP and text terminal menus.
-- USB library and local portal work when Ethernet is disconnected.
-- Wi-Fi clients reach only configured offline host services; no unintentional private LAN or internet transit.
-- DHCP/DNS coexistence tested, including host reboots and reconnections.
-- Resource consumption measured on both MIPS targets.
-- Never expose administrative UIs or credentials through Telnet.
-- No claims of hardware support before physical testing.
+Where bridging is unavailable or isolation is required, place Ethernet and Wi-Fi on separate subnets and route between them using OpenWrt. The external host needs a return route or an explicitly configured NAT policy. This is a secondary, opt-in mode, not the default design target.
 
-## Milestones
+## M0/M1 boundaries
 
-M1: service catalog schema and static links in shared model; M2: OpenWrt network modes and firewall configuration; M3: HTTP/Telnet presentation and physical acceptance tests; later: protocol-aware metadata adapters.
+M0: architecture and host prototype; no real device network changes. M1/M2: implement OpenWrt AP+LAN bridge profiles for WR703N and Mango, confirm correct Ethernet interfaces, DHCP behavior and basic reachability using arbitrary TCP services. Verify hardware revisions and firmware/recovery before flashing.
+
+## Acceptance tests
+
+1. Wi-Fi client associates to PocketBox and receives a valid IP address.
+2. Client reaches an HTTP service on Ethernet-connected computer by IP.
+3. Client reaches arbitrary TCP service (e.g. SSH or Telnet) on the same host without PocketBox code changes.
+4. PocketBox local HTTP/Telnet and USB library remain accessible.
+5. Unplugging Ethernet does not break PocketBox's own Wi-Fi services.
+6. No unintended internet connectivity, rogue DHCP, or DNS redirection.
+
+Optional links to IIAB or BBS in the PocketBox portal may be added later, but are not required for any of the above.
