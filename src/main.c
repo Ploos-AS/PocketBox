@@ -40,64 +40,38 @@ static void http_client(int fd, int root) {
   ssize_t n = recv(fd, req, sizeof req - 1, 0);
   if (n <= 0) return;
   req[n] = 0;
-  char *end = strstr(req, "\r
-");
-  if (!end) { send_all(fd, "HTTP/1.0 400 Bad Request\r
-Content-Length: 0\r
-\r
-", 47); return; }
+  char *end = strstr(req, "\r\n");
+  if (!end) { send_all(fd, "HTTP/1.0 400 Bad Request\r\nContent-Length: 0\r\n\r\n", 47); return; }
   *end = 0;
   if (sscanf(req, "GET %2047s", path) != 1 || strchr(path, '%') || strchr(path, '?')) {
-    const char *msg = "HTTP/1.0 400 Bad Request\r
-Content-Length: 0\r
-\r
-";
+    const char *msg = "HTTP/1.0 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
     send_all(fd, msg, strlen(msg)); return;
   }
   if (!strcmp(path, "/")) {
     const char *page = "<!doctype html><title>PocketBox</title><h1>PocketBox M0</h1><p>Offline library prototype</p><a href='/files/welcome.txt'>Welcome file</a>";
-    int size = snprintf(header, sizeof header, "HTTP/1.0 200 OK\r
-Content-Type: text/html\r
-Content-Length: %zu\r
-Connection: close\r
-\r
-", strlen(page));
+    int size = snprintf(header, sizeof header, "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n", strlen(page));
     if (size > 0) { send_all(fd, header, (size_t)size); send_all(fd, page, strlen(page)); }
     return;
   }
   /* M0: one basename only; openat + O_NOFOLLOW prevents traversal and symlink escapes. */
   const char *prefix = "/files/";
   if (strncmp(path, prefix, strlen(prefix))) {
-    const char *msg = "HTTP/1.0 404 Not Found\r
-Content-Length: 0\r
-\r
-";
+    const char *msg = "HTTP/1.0 404 Not Found\r\nContent-Length: 0\r\n\r\n";
     send_all(fd, msg, strlen(msg)); return;
   }
   const char *name = path + strlen(prefix);
   if (!*name || !strcmp(name, ".") || !strcmp(name, "..") || strchr(name, '/')) {
-    const char *msg = "HTTP/1.0 400 Bad Request\r
-Content-Length: 0\r
-\r
-";
+    const char *msg = "HTTP/1.0 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
     send_all(fd, msg, strlen(msg)); return;
   }
   int file = openat(root, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
   struct stat st;
   if (file < 0 || fstat(file, &st) || !S_ISREG(st.st_mode)) {
     if (file >= 0) close(file);
-    const char *msg = "HTTP/1.0 404 Not Found\r
-Content-Length: 0\r
-\r
-";
+    const char *msg = "HTTP/1.0 404 Not Found\r\nContent-Length: 0\r\n\r\n";
     send_all(fd, msg, strlen(msg)); return;
   }
-  int size = snprintf(header, sizeof header, "HTTP/1.0 200 OK\r
-Content-Type: application/octet-stream\r
-Content-Length: %lld\r
-Connection: close\r
-\r
-", (long long)st.st_size);
+  int size = snprintf(header, sizeof header, "HTTP/1.0 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %lld\r\nConnection: close\r\n\r\n", (long long)st.st_size);
   if (size > 0 && send_all(fd, header, (size_t)size) == 0)
     while ((n = read(file, buf, sizeof buf)) > 0)
       if (send_all(fd, buf, (size_t)n)) break;
@@ -124,13 +98,11 @@ static void terminal_input(struct terminal *c) {
 int main(int argc, char **argv) {
   const char *dir = "."; unsigned http = 8080, telnet = 2323;
   for (int i = 1; i < argc; ++i) {
-    if (i + 1 >= argc) { fprintf(stderr, "Missing value for %s
-", argv[i]); return 2; }
+    if (i + 1 >= argc) { fprintf(stderr, "Missing value for %s\n", argv[i]); return 2; }
     if (!strcmp(argv[i], "--root")) dir = argv[++i];
     else if (!strcmp(argv[i], "--http-port")) http = (unsigned)atoi(argv[++i]);
     else if (!strcmp(argv[i], "--telnet-port")) telnet = (unsigned)atoi(argv[++i]);
-    else { fprintf(stderr, "Unknown option: %s
-", argv[i]); return 2; }
+    else { fprintf(stderr, "Unknown option: %s\n", argv[i]); return 2; }
   }
   if (!http || http > 65535 || !telnet || telnet > 65535 || http == telnet) return 2;
   int root = open(dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
@@ -139,8 +111,7 @@ int main(int argc, char **argv) {
   if (h < 0 || t < 0) { perror("listen"); if (h >= 0) close(h); if (t >= 0) close(t); close(root); return 1; }
   signal(SIGINT, on_signal); signal(SIGTERM, on_signal);
   signal(SIGPIPE, SIG_IGN);
-  fprintf(stderr, "PocketBox M0 listening on 127.0.0.1 HTTP:%u Telnet:%u
-", http, telnet);
+  fprintf(stderr, "PocketBox M0 listening on 127.0.0.1 HTTP:%u Telnet:%u\n", http, telnet);
   /* HTTP request handling remains synchronous with a two-second timeout.
      Terminal clients are nonblocking and bounded to MAX_TERMINALS. */ 
   struct terminal clients[MAX_TERMINALS];
