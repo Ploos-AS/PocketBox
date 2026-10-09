@@ -15,3 +15,7 @@ M0 is an intentionally limited feasibility prototype. It uses one sequential acc
 ### Planned adapters
 
 HTTP, RFC-aware Telnet/ANSI, optional FTP/Gopher and BBS file-area exports. Protocol services share file IDs, metadata and access policy.
+
+## External IIAB gateway mode
+
+The Ethernet-attached Internet-in-a-Box is a separate host. PocketBox remains a standalone offline library/BBS and optionally offers Wi-Fi clients routed access and curated portal links to IIAB services. Keep networking configuration in OpenWrt (not the C core). Default to routed isolation; bridging is an optional hardware-qualified mode. Handle DHCP/DNS ownership, Ethernet port selection, IP configuration, network isolation, service reachability and offline fallback explicitly. See ROADMAP.md.
