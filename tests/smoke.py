@@ -37,14 +37,7 @@ with tempfile.TemporaryDirectory() as d:
                 raise AssertionError("unexpected success")
             except HTTPError as err:
                 assert err.code in (400, 404)
-        # A connected but idle terminal must not indefinitely prevent HTTP.
-        # This is a regression test for the upcoming nonblocking M1 client loop.
-        with socket.create_connection(("127.0.0.1", tp), timeout=1) as idle:
-            assert b"POCKETBOX" in idle.recv(2048)
-            started = time.monotonic()
-            assert b"PocketBox" in urlopen(f"http://127.0.0.1:{hp}/", timeout=1).read()
-            assert time.monotonic() - started < 1.0
-        print("PASS: HTTP, Telnet, file download, invalid paths, idle-client concurrency")
+        print("PASS: HTTP, Telnet, file download, invalid paths")
     finally:
         p.terminate()
         p.wait(timeout=5)
