@@ -64,7 +64,7 @@ with tempfile.TemporaryDirectory() as d:
                 assert expected in terminal_listing, (expected, terminal_listing)
             for excluded in (b".private", b"bad&name.txt", b"nested.txt", b"linked.txt"):
                 assert excluded not in terminal_listing, (excluded, terminal_listing)
-        for bad in ["../etc/passwd", "%2e%2e", "missing"]:
+        for bad in ["../etc/passwd", "%2e%2e", "missing", ".private", "linked.txt", "bad%26name.txt"]:
             try:
                 urlopen(f"http://127.0.0.1:{hp}/files/{bad}")
                 raise AssertionError("unexpected success")
