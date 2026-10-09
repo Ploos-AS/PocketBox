@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/select.h>
+#include <poll.h>\n#include <time.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -101,25 +101,24 @@ int main(int argc, char **argv) {
   if (root < 0) { perror("root"); return 1; }
   int h = listener(http), t = listener(telnet);
   if (h < 0 || t < 0) { perror("listen"); if (h >= 0) close(h); if (t >= 0) close(t); close(root); return 1; }
-  signal(SIGINT, on_signal); signal(SIGTERM, on_signal);
+  signal(SIGINT, on_signal); signal(SIGTERM, on_signal);\n  signal(SIGPIPE, SIG_IGN);
   fprintf(stderr, "PocketBox M0 listening on 127.0.0.1 HTTP:%u Telnet:%u\n", http, telnet);
+  /* M1 step: poll() listeners, but per-client I/O remains synchronous and
+     bounded by socket timeouts. Full nonblocking client states come next. */
   while (running) {
-    fd_set fds; FD_ZERO(&fds); FD_SET(h, &fds); FD_SET(t, &fds);
-    int max = h > t ? h : t;
-    struct timeval timeout = {1, 0};
-    if (select(max + 1, &fds, NULL, NULL, &timeout) <= 0) continue;
+    struct pollfd fds[2] = {{h, POLLIN, 0}, {t, POLLIN, 0}};
+    int ready = poll(fds, 2, 1000);
+    if (ready < 0) { if (errno == EINTR) continue; perror("poll"); break; }
+    if (!ready) continue;
     for (int i = 0; i < 2; ++i) {
-      int srv = i ? t : h;
-      if (FD_ISSET(srv, &fds)) {
-        int fd = accept(srv, NULL, NULL);
-        if (fd >= 0) {
-          struct timeval tv = {2, 0};
-          setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
-          setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
-          if (i) telnet_client(fd); else http_client(fd, root);
-          close(fd);
-        }
-      }
+      if (!(fds[i].revents & POLLIN)) continue;
+      int fd = accept(fds[i].fd, NULL, NULL);
+      if (fd < 0) continue;
+      struct timeval tv = {2, 0};
+      setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+      setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
+      if (i) telnet_client(fd); else http_client(fd, root);
+      close(fd);
     }
   }
   close(h); close(t); close(root); return 0;
