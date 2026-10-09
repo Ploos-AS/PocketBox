@@ -20,6 +20,8 @@ with tempfile.TemporaryDirectory() as d:
     Path(d, "subfolder").mkdir()
     Path(d, "subfolder", "nested.txt").write_text("nested")
     Path(d, "linked.txt").symlink_to(Path(d, "manual.pdf"))
+    for i in range(40):
+        Path(d, f"retro-{i:03}.bin").write_bytes(b"retro")
     hp, tp = available_port(), available_port()
     while hp == tp:
         tp = available_port()
@@ -64,6 +66,20 @@ with tempfile.TemporaryDirectory() as d:
                 assert expected in terminal_listing, (expected, terminal_listing)
             for excluded in (b".private", b"bad&name.txt", b"nested.txt", b"linked.txt"):
                 assert excluded not in terminal_listing, (excluded, terminal_listing)
+        assert b"Next page" in listing
+        pages = [listing]
+        cursor = "retro-029.bin"
+        # Verify cursor paging across the bounded 32-entry view.
+        while b"Next page" in pages[-1]:
+            import re
+            match = re.search(rb"/\?after=([^']+)", pages[-1])
+            assert match, pages[-1]
+            cursor = match.group(1).decode("ascii")
+            pages.append(urlopen(f"http://127.0.0.1:{hp}/?after={cursor}").read())
+            assert len(pages) <= 4
+        all_pages = b"".join(pages)
+        for i in range(40):
+            assert f"retro-{i:03}.bin".encode() in all_pages
         for bad in ["../etc/passwd", "%2e%2e", "missing", ".private", "linked.txt", "bad%26name.txt"]:
             try:
                 urlopen(f"http://127.0.0.1:{hp}/files/{bad}")
