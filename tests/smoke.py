@@ -14,6 +14,12 @@ def available_port():
 
 with tempfile.TemporaryDirectory() as d:
     Path(d, "welcome.txt").write_text("offline-ok\n")
+    Path(d, "manual.pdf").write_bytes(b"PDF-test")
+    Path(d, ".private").write_text("hidden")
+    Path(d, "bad&name.txt").write_text("excluded")
+    Path(d, "subfolder").mkdir()
+    Path(d, "subfolder", "nested.txt").write_text("nested")
+    Path(d, "linked.txt").symlink_to(Path(d, "manual.pdf"))
     hp, tp = available_port(), available_port()
     while hp == tp:
         tp = available_port()
@@ -31,6 +37,33 @@ with tempfile.TemporaryDirectory() as d:
             raise AssertionError("server did not start")
         assert b"PocketBox" in urlopen(f"http://127.0.0.1:{hp}/").read()
         assert urlopen(f"http://127.0.0.1:{hp}/files/welcome.txt").read() == b"offline-ok\n"
+        listing = urlopen(f"http://127.0.0.1:{hp}/").read()
+        for expected in (b"welcome.txt", b"manual.pdf"):
+            assert expected in listing, (expected, listing)
+        for excluded in (b".private", b"bad&name.txt", b"nested.txt", b"linked.txt"):
+            assert excluded not in listing, (excluded, listing)
+        assert urlopen(f"http://127.0.0.1:{hp}/files/manual.pdf").read() == b"PDF-test"
+        with socket.create_connection(("127.0.0.1", tp), timeout=1) as terminal:
+            terminal.settimeout(1)
+            assert b"POCKETBOX" in terminal.recv(2048)
+            terminal.sendall(b"F")
+            chunks = []
+            deadline = time.monotonic() + 1
+            while time.monotonic() < deadline:
+                try:
+                    part = terminal.recv(2048)
+                except socket.timeout:
+                    break
+                if not part:
+                    break
+                chunks.append(part)
+                if b"welcome.txt" in b"".join(chunks) and b"manual.pdf" in b"".join(chunks):
+                    break
+            terminal_listing = b"".join(chunks)
+            for expected in (b"welcome.txt", b"manual.pdf"):
+                assert expected in terminal_listing, (expected, terminal_listing)
+            for excluded in (b".private", b"bad&name.txt", b"nested.txt", b"linked.txt"):
+                assert excluded not in terminal_listing, (excluded, terminal_listing)
         for bad in ["../etc/passwd", "%2e%2e", "missing"]:
             try:
                 urlopen(f"http://127.0.0.1:{hp}/files/{bad}")
