@@ -42,7 +42,13 @@ with tempfile.TemporaryDirectory() as d:
             started = time.monotonic()
             assert b"PocketBox" in urlopen(f"http://127.0.0.1:{hp}/", timeout=1).read()
             assert time.monotonic() - started < 1.0
-        print("PASS: HTTP, Telnet, file download, invalid paths, idle terminal concurrency")
+        # A partial HTTP request must not starve another HTTP client.
+        with socket.create_connection(("127.0.0.1", hp), timeout=1) as slow:
+            slow.sendall(b"GET / HTTP/1.1")
+            started = time.monotonic()
+            assert b"PocketBox" in urlopen(f"http://127.0.0.1:{hp}/", timeout=1).read()
+            assert time.monotonic() - started < 1.0
+        print("PASS: HTTP, Telnet, file download, invalid paths, idle terminal and HTTP concurrency")
     finally:
         p.terminate()
         p.wait(timeout=5)
