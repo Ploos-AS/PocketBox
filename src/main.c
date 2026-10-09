@@ -20,10 +20,6 @@ struct terminal { int fd; unsigned inputs; };
 static const char *terminal_menu = "\r\n*** POCKETBOX M1 ***\r\n[F] Files (HTTP: /files/welcome.txt)\r\n[Q] Quit\r\nChoice: ";
 static volatile sig_atomic_t running = 1;
 static void on_signal(int sig) { (void)sig; running = 0; }
-static int send_all(int fd, const char *s, size_t len) {
-  while (len) { ssize_t n = send(fd, s, len, 0); if (n <= 0) return -1; s += n; len -= (size_t)n; }
-  return 0;
-}
 static int listener(unsigned port) {
   int fd = socket(AF_INET, SOCK_STREAM, 0), opt = 1;
   struct sockaddr_in a;
@@ -35,48 +31,7 @@ static int listener(unsigned port) {
   if (bind(fd, (struct sockaddr *)&a, sizeof a) || listen(fd, 8)) { close(fd); return -1; }
   return fd;
 }
-static void http_client(int fd, int root) {
-  char req[BUFSZ], path[BUFSZ], buf[BUFSZ], header[256];
-  ssize_t n = recv(fd, req, sizeof req - 1, 0);
-  if (n <= 0) return;
-  req[n] = 0;
-  char *end = strstr(req, "\r\n");
-  if (!end) { send_all(fd, "HTTP/1.0 400 Bad Request\r\nContent-Length: 0\r\n\r\n", 47); return; }
-  *end = 0;
-  if (sscanf(req, "GET %2047s", path) != 1 || strchr(path, '%') || strchr(path, '?')) {
-    const char *msg = "HTTP/1.0 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
-    send_all(fd, msg, strlen(msg)); return;
-  }
-  if (!strcmp(path, "/")) {
-    const char *page = "<!doctype html><title>PocketBox</title><h1>PocketBox M0</h1><p>Offline library prototype</p><a href='/files/welcome.txt'>Welcome file</a>";
-    int size = snprintf(header, sizeof header, "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n", strlen(page));
-    if (size > 0) { send_all(fd, header, (size_t)size); send_all(fd, page, strlen(page)); }
-    return;
-  }
-  /* M0: one basename only; openat + O_NOFOLLOW prevents traversal and symlink escapes. */
-  const char *prefix = "/files/";
-  if (strncmp(path, prefix, strlen(prefix))) {
-    const char *msg = "HTTP/1.0 404 Not Found\r\nContent-Length: 0\r\n\r\n";
-    send_all(fd, msg, strlen(msg)); return;
-  }
-  const char *name = path + strlen(prefix);
-  if (!*name || !strcmp(name, ".") || !strcmp(name, "..") || strchr(name, '/')) {
-    const char *msg = "HTTP/1.0 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
-    send_all(fd, msg, strlen(msg)); return;
-  }
-  int file = openat(root, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
-  struct stat st;
-  if (file < 0 || fstat(file, &st) || !S_ISREG(st.st_mode)) {
-    if (file >= 0) close(file);
-    const char *msg = "HTTP/1.0 404 Not Found\r\nContent-Length: 0\r\n\r\n";
-    send_all(fd, msg, strlen(msg)); return;
-  }
-  int size = snprintf(header, sizeof header, "HTTP/1.0 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %lld\r\nConnection: close\r\n\r\n", (long long)st.st_size);
-  if (size > 0 && send_all(fd, header, (size_t)size) == 0)
-    while ((n = read(file, buf, sizeof buf)) > 0)
-      if (send_all(fd, buf, (size_t)n)) break;
-  close(file);
-}
+#include "http_async.h"
 /* Terminal sockets are nonblocking and processed by poll(), not recv loops. */
 static void terminal_input(struct terminal *c) {
   char input[64];
@@ -112,17 +67,21 @@ int main(int argc, char **argv) {
   signal(SIGINT, on_signal); signal(SIGTERM, on_signal);
   signal(SIGPIPE, SIG_IGN);
   fprintf(stderr, "PocketBox M0 listening on 127.0.0.1 HTTP:%u Telnet:%u\n", http, telnet);
-  /* HTTP request handling remains synchronous with a two-second timeout.
-     Terminal clients are nonblocking and bounded to MAX_TERMINALS. */ 
+  /* Both HTTP and terminal sockets are bounded and polled. */ 
+  struct http_conn web[MAX_HTTP];
+  for (unsigned i = 0; i < MAX_HTTP; ++i) { web[i].fd = -1; web[i].file = -1; }
   struct terminal clients[MAX_TERMINALS];
   for (unsigned i = 0; i < MAX_TERMINALS; ++i) clients[i].fd = -1;
   while (running) {
-    struct pollfd fds[2 + MAX_TERMINALS];
+    struct pollfd fds[2 + MAX_TERMINALS + MAX_HTTP];
     nfds_t count = 2;
     fds[0] = (struct pollfd){h, POLLIN, 0};
     fds[1] = (struct pollfd){t, POLLIN, 0};
     for (unsigned i = 0; i < MAX_TERMINALS; ++i)
       if (clients[i].fd >= 0) fds[count++] = (struct pollfd){clients[i].fd, POLLIN, 0};
+    for (unsigned i = 0; i < MAX_HTTP; ++i)
+      if (web[i].fd >= 0) fds[count++] = (struct pollfd){web[i].fd,
+          web[i].state == 0 ? POLLIN : POLLOUT, 0};
     int ready = poll(fds, count, 1000);
     if (ready < 0) { if (errno == EINTR) continue; perror("poll"); break; }
     if (!ready) continue;
@@ -137,14 +96,30 @@ int main(int argc, char **argv) {
           break;
         }
     }
+    for (nfds_t i = 2; i < count; ++i) {
+      if (!fds[i].revents) continue;
+      for (unsigned j = 0; j < MAX_HTTP; ++j) {
+        if (web[j].fd != fds[i].fd) continue;
+        http_step(&web[j], fds[i].revents, root);
+        if (web[j].state == 3) http_close(&web[j]);
+        break;
+      }
+    }
+    time_t now = time(NULL);
+    for (unsigned i = 0; i < MAX_HTTP; ++i)
+      if (web[i].fd >= 0 && now - web[i].last > HTTP_IDLE_SECONDS)
+        http_close(&web[i]);
     if (fds[0].revents & POLLIN) {
       int fd = accept(h, NULL, NULL);
       if (fd >= 0) {
-        struct timeval tv = {2, 0};
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
-        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
-        http_client(fd, root);
-        close(fd);
+        unsigned slot = MAX_HTTP;
+        for (unsigned i = 0; i < MAX_HTTP; ++i)
+          if (web[i].fd < 0) { slot = i; break; }
+        if (slot == MAX_HTTP || fcntl(fd, F_SETFL, O_NONBLOCK) < 0) close(fd);
+        else {
+          memset(&web[slot], 0, sizeof web[slot]);
+          web[slot].fd = fd; web[slot].file = -1; web[slot].last = time(NULL);
+        }
       }
     }
     if (fds[1].revents & POLLIN) {
@@ -163,5 +138,6 @@ int main(int argc, char **argv) {
   }
   for (unsigned i = 0; i < MAX_TERMINALS; ++i)
     if (clients[i].fd >= 0) close(clients[i].fd);
+  for (unsigned i = 0; i < MAX_HTTP; ++i) if (web[i].fd >= 0) http_close(&web[i]);
   close(h); close(t); close(root); return 0;
 }
