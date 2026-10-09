@@ -54,7 +54,7 @@ static void http_prepare(struct http_conn *c, int root) {
   const char *prefix = "/files/";
   if (strncmp(path, prefix, strlen(prefix))) { http_error(c, 404, "Not Found"); return; }
   const char *name = path + strlen(prefix);
-  if (!*name || !strcmp(name, ".") || !strcmp(name, "..") || strchr(name, '/')) {
+  if (!catalog_valid(name)) {
     http_error(c, 400, "Bad Request"); return;
   }
   int fd = openat(root, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
