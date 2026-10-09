@@ -31,9 +31,10 @@ static int listener(unsigned port) {
   if (bind(fd, (struct sockaddr *)&a, sizeof a) || listen(fd, 8)) { close(fd); return -1; }
   return fd;
 }
+#include "catalog.h"
 #include "http_async.h"
 /* Terminal sockets are nonblocking and processed by poll(), not recv loops. */
-static void terminal_input(struct terminal *c) {
+static void terminal_input(struct terminal *c, int root) {
   char input[64];
   ssize_t n = recv(c->fd, input, sizeof input, 0);
   if (n <= 0) { close(c->fd); c->fd = -1; return; }
@@ -47,6 +48,12 @@ static void terminal_input(struct terminal *c) {
     if (ch == 'f' || ch == 'F') {
       const char *msg = "\r\nDownload /files/welcome.txt via HTTP\r\nChoice: ";
       send(c->fd, msg, strlen(msg), MSG_DONTWAIT | MSG_NOSIGNAL);
+      struct catalog cat;
+      catalog_load(root, &cat);
+      for (unsigned k = 0; k < cat.count; ++k) {
+        send(c->fd, cat.names[k], strlen(cat.names[k]), MSG_DONTWAIT | MSG_NOSIGNAL);
+        send(c->fd, "\\r\\n", 2, MSG_DONTWAIT | MSG_NOSIGNAL);
+      }
     }
   }
 }
@@ -92,7 +99,7 @@ int main(int argc, char **argv) {
         if (clients[j].fd == fds[i].fd) {
           if (fds[i].revents & (POLLERR | POLLHUP | POLLNVAL)) {
             close(clients[j].fd); clients[j].fd = -1;
-          } else if (fds[i].revents & POLLIN) terminal_input(&clients[j]);
+          } else if (fds[i].revents & POLLIN) terminal_input(&clients[j], root);
           break;
         }
     }
