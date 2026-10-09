@@ -36,12 +36,14 @@ static void http_prepare(struct http_conn *c, int root) {
   if (sscanf(line, "%7s %2047s %15s %c", method, path, version, &extra) != 3 ||
       strcmp(method, "GET") ||
       (strcmp(version, "HTTP/1.0") && strcmp(version, "HTTP/1.1")) ||
-      path[0] != '/' || strchr(path, '%') || strchr(path, '?')) {
+      path[0] != '/' || strchr(path, '%')) {
     http_error(c, 400, "Bad Request"); return;
   }
-  if (!strcmp(path, "/")) {
+  if (!strcmp(path, "/") || !strncmp(path, "/?after=", 8)) {
     struct catalog cat;
-    catalog_load(root, &cat);
+    const char *after = !strncmp(path, "/?after=", 8) ? path + 8 : "";
+    if (*after && !catalog_valid(after)) { http_error(c, 400, "Bad Request"); return; }
+    catalog_load_page(root, &cat, after);
     char page[HTTP_OUT];
     size_t page_len = catalog_html(&cat, page, sizeof page);
     if (!page_len) { http_error(c, 500, "Internal Server Error"); return; }
