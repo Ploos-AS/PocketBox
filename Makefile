@@ -1,6 +1,6 @@
 CC ?= cc
 CFLAGS ?= -Os -std=c11 -Wall -Wextra -Werror -pedantic
-CPPFLAGS ?= -D_POSIX_C_SOURCE=200809L
+CPPFLAGS ?= -D_GNU_SOURCE
 LDFLAGS ?=
 all: pocketbox
 pocketbox: src/main.c
