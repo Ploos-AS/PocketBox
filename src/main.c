@@ -49,7 +49,7 @@ static void terminal_text(struct terminal *c, const char *s) {
     memmove(c->output, c->output + c->out_pos, c->out_len - c->out_pos);
     c->out_len -= c->out_pos; c->out_pos = 0;
   }
-  if (n > sizeof c->output - c->out_len) return;
+  if (n > sizeof c->output - c->out_len) { close(c->fd); c->fd = -1; return; }
   memcpy(c->output + c->out_len, s, n); c->out_len += n;
 }
 /* Terminal sockets are nonblocking and processed by poll(), not recv loops. */
@@ -70,10 +70,11 @@ static void terminal_input(struct terminal *c, int root) {
       catalog_load_page(root, &cat, c->cursor);
       const char *header = "\r\nPocketBox files:\r\n";
       terminal_text(c, header);
-      for (unsigned k = 0; k < cat.count; ++k) {
+      for (unsigned k = 0; c->fd >= 0 && k < cat.count; ++k) {
         terminal_text(c, cat.names[k]);
         terminal_text(c, "\r\n");
       }
+      if (c->fd < 0) return;
       if (cat.count) snprintf(c->cursor, sizeof c->cursor, "%s",
                               cat.names[cat.count - 1]);
       const char *footer = cat.has_more
