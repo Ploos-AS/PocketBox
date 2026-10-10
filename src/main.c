@@ -16,8 +16,8 @@
 
 #define BUFSZ 2048
 #define MAX_TERMINALS 12
-struct terminal { int fd; unsigned inputs; };
-static const char *terminal_menu = "\r\n*** POCKETBOX M1 ***\r\n[F] Files (HTTP: /files/welcome.txt)\r\n[Q] Quit\r\nChoice: ";
+struct terminal { int fd; unsigned inputs; char cursor[128]; };
+static const char *terminal_menu = "\r\n*** POCKETBOX M1 ***\r\n[F] Files  [N] Next page  [Q] Quit\r\nChoice: ";
 static volatile sig_atomic_t running = 1;
 static void on_signal(int sig) { (void)sig; running = 0; }
 static int listener(unsigned port) {
@@ -45,15 +45,22 @@ static void terminal_input(struct terminal *c, int root) {
       send(c->fd, bye, strlen(bye), MSG_DONTWAIT | MSG_NOSIGNAL);
       close(c->fd); c->fd = -1; return;
     }
-    if (ch == 'f' || ch == 'F') {
-      const char *msg = "\r\nDownload /files/welcome.txt via HTTP\r\nChoice: ";
-      send(c->fd, msg, strlen(msg), MSG_DONTWAIT | MSG_NOSIGNAL);
+    if (ch == 'f' || ch == 'F' || ch == 'n' || ch == 'N') {
+      if (ch == 'f' || ch == 'F') c->cursor[0] = 0;
       struct catalog cat;
-      catalog_load(root, &cat);
+      catalog_load_page(root, &cat, c->cursor);
+      const char *header = "\r\nPocketBox files:\r\n";
+      send(c->fd, header, strlen(header), MSG_DONTWAIT | MSG_NOSIGNAL);
       for (unsigned k = 0; k < cat.count; ++k) {
         send(c->fd, cat.names[k], strlen(cat.names[k]), MSG_DONTWAIT | MSG_NOSIGNAL);
-        send(c->fd, "\\r\\n", 2, MSG_DONTWAIT | MSG_NOSIGNAL);
+        send(c->fd, "\r\n", 2, MSG_DONTWAIT | MSG_NOSIGNAL);
       }
+      if (cat.count) snprintf(c->cursor, sizeof c->cursor, "%s",
+                              cat.names[cat.count - 1]);
+      const char *footer = cat.has_more
+          ? "[N] Next page  [F] First page  [Q] Quit\r\nChoice: "
+          : "[F] First page  [Q] Quit\r\nChoice: ";
+      send(c->fd, footer, strlen(footer), MSG_DONTWAIT | MSG_NOSIGNAL);
     }
   }
 }
