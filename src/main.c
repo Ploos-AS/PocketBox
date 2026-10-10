@@ -16,7 +16,7 @@
 
 #define BUFSZ 2048
 #define MAX_TERMINALS 12
-struct terminal { int fd; unsigned inputs; char cursor[128]; };
+struct terminal { int fd; unsigned inputs; char cursor[128]; char output[8192]; size_t out_len, out_pos; };
 static const char *terminal_menu = "\r\n*** POCKETBOX M1 ***\r\n[F] Files  [N] Next page  [Q] Quit\r\nChoice: ";
 static volatile sig_atomic_t running = 1;
 static void on_signal(int sig) { (void)sig; running = 0; }
@@ -33,6 +33,25 @@ static int listener(unsigned port) {
 }
 #include "catalog.h"
 #include "http_async.h"
+static void terminal_flush(struct terminal *c) {
+  if (c->out_pos == c->out_len) { c->out_pos = c->out_len = 0; return; }
+  ssize_t n = send(c->fd, c->output + c->out_pos, c->out_len - c->out_pos,
+                   MSG_DONTWAIT | MSG_NOSIGNAL);
+  if (n > 0) c->out_pos += (size_t)n;
+  else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+    close(c->fd); c->fd = -1; return;
+  }
+  if (c->out_pos == c->out_len) c->out_pos = c->out_len = 0;
+}
+static void terminal_text(struct terminal *c, const char *s) {
+  size_t n = strlen(s);
+  if (c->out_pos) {
+    memmove(c->output, c->output + c->out_pos, c->out_len - c->out_pos);
+    c->out_len -= c->out_pos; c->out_pos = 0;
+  }
+  if (n > sizeof c->output - c->out_len) return;
+  memcpy(c->output + c->out_len, s, n); c->out_len += n;
+}
 /* Terminal sockets are nonblocking and processed by poll(), not recv loops. */
 static void terminal_input(struct terminal *c, int root) {
   char input[64];
@@ -50,17 +69,17 @@ static void terminal_input(struct terminal *c, int root) {
       struct catalog cat;
       catalog_load_page(root, &cat, c->cursor);
       const char *header = "\r\nPocketBox files:\r\n";
-      send(c->fd, header, strlen(header), MSG_DONTWAIT | MSG_NOSIGNAL);
+      terminal_text(c, header);
       for (unsigned k = 0; k < cat.count; ++k) {
-        send(c->fd, cat.names[k], strlen(cat.names[k]), MSG_DONTWAIT | MSG_NOSIGNAL);
-        send(c->fd, "\r\n", 2, MSG_DONTWAIT | MSG_NOSIGNAL);
+        terminal_text(c, cat.names[k]);
+        terminal_text(c, "\r\n");
       }
       if (cat.count) snprintf(c->cursor, sizeof c->cursor, "%s",
                               cat.names[cat.count - 1]);
       const char *footer = cat.has_more
           ? "[N] Next page  [F] First page  [Q] Quit\r\nChoice: "
           : "[F] First page  [Q] Quit\r\nChoice: ";
-      send(c->fd, footer, strlen(footer), MSG_DONTWAIT | MSG_NOSIGNAL);
+      terminal_text(c, footer);
     }
   }
 }
@@ -92,7 +111,7 @@ int main(int argc, char **argv) {
     fds[0] = (struct pollfd){h, POLLIN, 0};
     fds[1] = (struct pollfd){t, POLLIN, 0};
     for (unsigned i = 0; i < MAX_TERMINALS; ++i)
-      if (clients[i].fd >= 0) fds[count++] = (struct pollfd){clients[i].fd, POLLIN, 0};
+      if (clients[i].fd >= 0) fds[count++] = (struct pollfd){clients[i].fd, (short)(POLLIN | (clients[i].out_len > clients[i].out_pos ? POLLOUT : 0)), 0};
     for (unsigned i = 0; i < MAX_HTTP; ++i)
       if (web[i].fd >= 0) fds[count++] = (struct pollfd){web[i].fd,
           web[i].state == 0 ? POLLIN : POLLOUT, 0};
@@ -106,7 +125,7 @@ int main(int argc, char **argv) {
         if (clients[j].fd == fds[i].fd) {
           if (fds[i].revents & (POLLERR | POLLHUP | POLLNVAL)) {
             close(clients[j].fd); clients[j].fd = -1;
-          } else if (fds[i].revents & POLLIN) terminal_input(&clients[j], root);
+          } else { if (fds[i].revents & POLLIN) terminal_input(&clients[j], root); if (clients[j].fd >= 0 && (fds[i].revents & POLLOUT)) terminal_flush(&clients[j]); }
           break;
         }
     }
@@ -144,8 +163,8 @@ int main(int argc, char **argv) {
           if (clients[i].fd < 0) { slot = i; break; }
         if (slot == MAX_TERMINALS || fcntl(fd, F_SETFL, O_NONBLOCK) < 0) close(fd);
         else {
-          clients[slot] = (struct terminal){.fd = fd, .inputs = 0, .cursor = {0}};
-          send(fd, terminal_menu, strlen(terminal_menu), MSG_DONTWAIT | MSG_NOSIGNAL);
+          clients[slot] = (struct terminal){.fd = fd};
+          terminal_text(&clients[slot], terminal_menu);
         }
       }
     }
