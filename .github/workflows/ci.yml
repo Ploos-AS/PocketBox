@@ -1,0 +1,15 @@
+name: C11 host CI
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: make
+      - name: Smoke tests
+        run: make test
+      - name: AP/LAN profile tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
