@@ -44,23 +44,32 @@ static void catalog_load_page(int root, struct catalog *cat, const char *after) 
 static size_t catalog_html(const struct catalog *cat, char *out, size_t cap) {
   size_t used = 0;
   const char *prefix = "<!doctype html><title>PocketBox</title><h1>Files</h1><ul>";
+  const char *suffix = "</ul>";
+  /* Reserve enough room for the longest possible next-page link and suffix. */
+  const size_t reserve = sizeof "<li><a href='/?after=" - 1
+      + CATALOG_NAME - 1 + sizeof "'>Next page</a></li>" - 1
+      + sizeof "</ul>" - 1;
   size_t n = strlen(prefix);
-  if (n >= cap) return 0;
+  if (n + reserve >= cap) return 0;
   memcpy(out, prefix, n); used = n;
+  unsigned shown = 0;
   for (unsigned i = 0; i < cat->count; ++i) {
     int written = snprintf(out + used, cap - used,
         "<li><a href='/files/%s'>%s</a></li>", cat->names[i], cat->names[i]);
-    if (written < 0 || (size_t)written >= cap - used) break;
+    if (written < 0 || (size_t)written >= cap - used ||
+        (size_t)written + reserve >= cap - used) break;
     used += (size_t)written;
+    shown++;
   }
-  if (cat->has_more && cat->count) {
+  if (shown < cat->count || cat->has_more) {
+    if (!shown) return 0;
     int written = snprintf(out + used, cap - used,
-        "<li><a href='/?after=%s'>Next page</a></li>", cat->names[cat->count - 1]);
+        "<li><a href='/?after=%s'>Next page</a></li>", cat->names[shown - 1]);
     if (written < 0 || (size_t)written >= cap - used) return 0;
     used += (size_t)written;
   }
-  const char *suffix = "</ul>";
-  if (strlen(suffix) >= cap - used) return 0;
-  memcpy(out + used, suffix, strlen(suffix));
-  return used + strlen(suffix);
+  n = strlen(suffix);
+  if (n >= cap - used) return 0;
+  memcpy(out + used, suffix, n);
+  return used + n;
 }
