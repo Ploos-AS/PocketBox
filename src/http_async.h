@@ -45,7 +45,7 @@ static void http_prepare(struct http_conn *c, int root) {
     if (*after && !catalog_valid(after)) { http_error(c, 400, "Bad Request"); return; }
     catalog_load_page(root, &cat, after);
     char page[HTTP_OUT];
-    size_t page_len = catalog_html(&cat, page, sizeof page);
+    size_t page_len = catalog_html(&cat, page, sizeof page - 160);
     if (!page_len) { http_error(c, 500, "Internal Server Error"); return; }
     http_response(c, 200, "OK", "text/html", (long long)page_len);
     if (c->state == 3 || c->out_len + page_len > sizeof c->output) { c->state = 3; return; }
