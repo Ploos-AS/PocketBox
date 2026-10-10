@@ -119,6 +119,25 @@ with tempfile.TemporaryDirectory() as d:
             started = time.monotonic()
             assert b"PocketBox" in urlopen(f"http://127.0.0.1:{hp}/", timeout=1).read()
             assert time.monotonic() - started < 1.0
+        # A terminal that does not read must not block independent HTTP clients.
+        with socket.create_connection(("127.0.0.1", tp), timeout=1) as stalled:
+            stalled.settimeout(1)
+            assert b"POCKETBOX" in stalled.recv(2048)
+            stalled.sendall(b"F" * 40)
+            started = time.monotonic()
+            assert b"PocketBox" in urlopen(f"http://127.0.0.1:{hp}/", timeout=1).read()
+            assert time.monotonic() - started < 1.0
+        # Verify a normal terminal response remains readable after buffering.
+        with socket.create_connection(("127.0.0.1", tp), timeout=1) as normal:
+            normal.settimeout(1)
+            assert b"POCKETBOX" in normal.recv(2048)
+            normal.sendall(b"F")
+            response = b""
+            deadline = time.monotonic() + 2
+            while b"Choice: " not in response and time.monotonic() < deadline:
+                response += normal.recv(4096)
+            assert b"retro-000.bin" in response
+            assert b"Next page" in response
         # A partial HTTP request must not starve another HTTP client.
         with socket.create_connection(("127.0.0.1", hp), timeout=1) as slow:
             slow.sendall(b"GET / HTTP/1.1")
