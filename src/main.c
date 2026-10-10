@@ -144,7 +144,7 @@ int main(int argc, char **argv) {
           if (clients[i].fd < 0) { slot = i; break; }
         if (slot == MAX_TERMINALS || fcntl(fd, F_SETFL, O_NONBLOCK) < 0) close(fd);
         else {
-          clients[slot] = (struct terminal){fd, 0};
+          clients[slot] = (struct terminal){.fd = fd, .inputs = 0, .cursor = {0}};
           send(fd, terminal_menu, strlen(terminal_menu), MSG_DONTWAIT | MSG_NOSIGNAL);
         }
       }
