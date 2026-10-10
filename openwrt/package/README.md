@@ -1,9 +1,10 @@
 # Experimental OpenWrt package scaffold
 
 This is a **developer-only package scaffold**, not a qualified router image.
-PocketBox currently binds its listeners to **127.0.0.1**, so enabling this
-service does **not** yet expose the portal to Wi-Fi/LAN clients. LAN binding
-must be implemented and reviewed before device deployment.
+PocketBox binds to **127.0.0.1 by default**. To expose the service to LAN
+clients, configure an explicit IPv4 address assigned to the PocketBox LAN
+interface. Wildcard binding (0.0.0.0) is rejected. Review firewall rules
+and verify the actual LAN address before enabling the service.
 
 To stage the package in a compatible, already configured OpenWrt build tree:
 
