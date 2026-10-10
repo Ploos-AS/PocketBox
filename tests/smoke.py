@@ -108,6 +108,28 @@ with tempfile.TemporaryDirectory() as d:
 
         for i in range(40):
             assert f"retro-{i:03}.bin".encode() in all_pages
+        # Long valid names must paginate without losing any entries.
+        long_names = [f"long-{i:03}-" + "x" * 110 for i in range(40)]
+        for name in long_names:
+            Path(d, name).write_bytes(b"long")
+        long_pages = []
+        cursor = ""
+        for _ in range(32):
+            page = urlopen(f"http://127.0.0.1:{hp}/" +
+                           (f"?after={cursor}" if cursor else "")).read()
+            long_pages.append(page)
+            import re
+            match = re.search(rb"/\?after=([^']+)", page)
+            if not match:
+                break
+            next_cursor = match.group(1).decode("ascii")
+            assert next_cursor > cursor
+            cursor = next_cursor
+        else:
+            raise AssertionError("long-name pagination did not terminate")
+        combined = b"".join(long_pages)
+        for name in long_names:
+            assert name.encode() in combined, name
         for bad in ["../etc/passwd", "%2e%2e", "missing", ".private", "linked.txt", "bad%26name.txt"]:
             try:
                 urlopen(f"http://127.0.0.1:{hp}/files/{bad}")
