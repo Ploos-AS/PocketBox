@@ -20,8 +20,6 @@ with tempfile.TemporaryDirectory() as d:
     Path(d, "subfolder").mkdir()
     Path(d, "subfolder", "nested.txt").write_text("nested")
     Path(d, "linked.txt").symlink_to(Path(d, "manual.pdf"))
-    for i in range(40):
-        Path(d, f"retro-{i:03}.bin").write_bytes(b"retro")
     hp, tp = available_port(), available_port()
     while hp == tp:
         tp = available_port()
@@ -66,6 +64,9 @@ with tempfile.TemporaryDirectory() as d:
                 assert expected in terminal_listing, (expected, terminal_listing)
             for excluded in (b".private", b"bad&name.txt", b"nested.txt", b"linked.txt"):
                 assert excluded not in terminal_listing, (excluded, terminal_listing)
+        for i in range(40):
+            Path(d, f"retro-{i:03}.bin").write_bytes(b"retro")
+        listing = urlopen(f"http://127.0.0.1:{hp}/").read()
         assert b"Next page" in listing
         pages = [listing]
         cursor = "retro-029.bin"
