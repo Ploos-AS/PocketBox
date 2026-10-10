@@ -20,14 +20,14 @@ struct terminal { int fd; unsigned inputs; char cursor[128]; char output[4608]; 
 static const char *terminal_menu = "\r\n*** POCKETBOX M1 ***\r\n[F] Files  [N] Next page  [Q] Quit\r\nChoice: ";
 static volatile sig_atomic_t running = 1;
 static void on_signal(int sig) { (void)sig; running = 0; }
-static int listener(unsigned port) {
+static int listener(unsigned port, struct in_addr bind_addr) {
   int fd = socket(AF_INET, SOCK_STREAM, 0), opt = 1;
   struct sockaddr_in a;
   if (fd < 0) return -1;
   setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof opt);
   memset(&a, 0, sizeof a);
   a.sin_family = AF_INET; a.sin_port = htons((unsigned short)port);
-  a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  a.sin_addr = bind_addr;
   if (bind(fd, (struct sockaddr *)&a, sizeof a) || listen(fd, 8)) { close(fd); return -1; }
   return fd;
 }
@@ -85,22 +85,31 @@ static void terminal_input(struct terminal *c, int root) {
   }
 }
 int main(int argc, char **argv) {
-  const char *dir = "."; unsigned http = 8080, telnet = 2323;
+  const char *dir = ".", *bind_ip = "127.0.0.1"; unsigned http = 8080, telnet = 2323;
   for (int i = 1; i < argc; ++i) {
     if (i + 1 >= argc) { fprintf(stderr, "Missing value for %s\n", argv[i]); return 2; }
     if (!strcmp(argv[i], "--root")) dir = argv[++i];
+    else if (!strcmp(argv[i], "--bind")) bind_ip = argv[++i];
     else if (!strcmp(argv[i], "--http-port")) http = (unsigned)atoi(argv[++i]);
     else if (!strcmp(argv[i], "--telnet-port")) telnet = (unsigned)atoi(argv[++i]);
     else { fprintf(stderr, "Unknown option: %s\n", argv[i]); return 2; }
   }
   if (!http || http > 65535 || !telnet || telnet > 65535 || http == telnet) return 2;
+  struct in_addr bind_addr;
+  if (inet_pton(AF_INET, bind_ip, &bind_addr) != 1 ||
+      bind_addr.s_addr == htonl(INADDR_ANY) ||
+      bind_addr.s_addr == htonl(INADDR_BROADCAST) ||
+      IN_MULTICAST(ntohl(bind_addr.s_addr))) {
+    fprintf(stderr, "Invalid --bind: specify a concrete IPv4 interface address (not 0.0.0.0)\n");
+    return 2;
+  }
   int root = open(dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
   if (root < 0) { perror("root"); return 1; }
-  int h = listener(http), t = listener(telnet);
+  int h = listener(http, bind_addr), t = listener(telnet, bind_addr);
   if (h < 0 || t < 0) { perror("listen"); if (h >= 0) close(h); if (t >= 0) close(t); close(root); return 1; }
   signal(SIGINT, on_signal); signal(SIGTERM, on_signal);
   signal(SIGPIPE, SIG_IGN);
-  fprintf(stderr, "PocketBox M0 listening on 127.0.0.1 HTTP:%u Telnet:%u\n", http, telnet);
+  fprintf(stderr, "PocketBox M1 listening on %s HTTP:%u Telnet:%u\n", bind_ip, http, telnet);
   /* Both HTTP and terminal sockets are bounded and polled. */ 
   struct http_conn web[MAX_HTTP];
   for (unsigned i = 0; i < MAX_HTTP; ++i) { web[i].fd = -1; web[i].file = -1; }
