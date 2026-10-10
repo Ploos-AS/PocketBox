@@ -23,6 +23,12 @@ with tempfile.TemporaryDirectory() as d:
     hp, tp = available_port(), available_port()
     while hp == tp:
         tp = available_port()
+    for bad_ip in ("0.0.0.0", "255.255.255.255", "224.0.0.1", "not-an-ip"):
+        invalid = subprocess.run(
+            ["./pocketbox", "--root", d, "--bind", bad_ip,
+             "--http-port", str(hp), "--telnet-port", str(tp)],
+            capture_output=True, timeout=2)
+        assert invalid.returncode == 2, (bad_ip, invalid.stderr)
     p = subprocess.Popen(["./pocketbox", "--root", d, "--http-port", str(hp), "--telnet-port", str(tp)])
     try:
         for _ in range(50):
