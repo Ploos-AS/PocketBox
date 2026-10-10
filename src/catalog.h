@@ -41,7 +41,6 @@ static void catalog_load_page(int root, struct catalog *cat, const char *after) 
     strcpy(cursor, best);
   }
 }
-static void catalog_load(int root, struct catalog *cat) { catalog_load_page(root, cat, ""); }
 static size_t catalog_html(const struct catalog *cat, char *out, size_t cap) {
   size_t used = 0;
   const char *prefix = "<!doctype html><title>PocketBox</title><h1>Files</h1><ul>";
