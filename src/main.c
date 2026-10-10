@@ -16,7 +16,7 @@
 
 #define BUFSZ 2048
 #define MAX_TERMINALS 12
-struct terminal { int fd; unsigned inputs; char cursor[128]; char output[8192]; size_t out_len, out_pos; };
+struct terminal { int fd; unsigned inputs; char cursor[128]; char output[4608]; size_t out_len, out_pos; };
 static const char *terminal_menu = "\r\n*** POCKETBOX M1 ***\r\n[F] Files  [N] Next page  [Q] Quit\r\nChoice: ";
 static volatile sig_atomic_t running = 1;
 static void on_signal(int sig) { (void)sig; running = 0; }
