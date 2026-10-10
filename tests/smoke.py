@@ -79,6 +79,33 @@ with tempfile.TemporaryDirectory() as d:
             pages.append(urlopen(f"http://127.0.0.1:{hp}/?after={cursor}").read())
             assert len(pages) <= 4
         all_pages = b"".join(pages)
+        with socket.create_connection(("127.0.0.1", tp), timeout=2) as terminal:
+            terminal.settimeout(0.5)
+            assert b"POCKETBOX" in terminal.recv(2048)
+            terminal.sendall(b"F")
+            terminal_pages = b""
+            for page_number in range(3):
+                chunks = []
+                until = time.monotonic() + 1
+                while time.monotonic() < until:
+                    try:
+                        data = terminal.recv(4096)
+                    except socket.timeout:
+                        break
+                    if not data:
+                        break
+                    chunks.append(data)
+                    if b"Choice: " in b"".join(chunks):
+                        break
+                page = b"".join(chunks)
+                terminal_pages += page
+                if b"[N] Next page" not in page:
+                    break
+                terminal.sendall(b"N")
+            for i in range(40):
+                assert f"retro-{i:03}.bin".encode() in terminal_pages
+            assert b"\\r\\n" not in terminal_pages
+
         for i in range(40):
             assert f"retro-{i:03}.bin".encode() in all_pages
         for bad in ["../etc/passwd", "%2e%2e", "missing", ".private", "linked.txt", "bad%26name.txt"]:
