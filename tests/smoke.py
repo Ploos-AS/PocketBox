@@ -29,6 +29,32 @@ with tempfile.TemporaryDirectory() as d:
              "--http-port", str(hp), "--telnet-port", str(tp)],
             capture_output=True, timeout=2)
         assert invalid.returncode == 2, (bad_ip, invalid.stderr)
+    # Explicit loopback binding serves both protocols; unassigned addresses fail.
+    unavailable = subprocess.run(
+        ["./pocketbox", "--root", d, "--bind", "192.0.2.123",
+         "--http-port", str(hp), "--telnet-port", str(tp)],
+        capture_output=True, timeout=2)
+    assert unavailable.returncode != 0
+    assert b"listen" in unavailable.stderr
+    bound = subprocess.Popen(
+        ["./pocketbox", "--root", d, "--bind", "127.0.0.1",
+         "--http-port", str(hp), "--telnet-port", str(tp)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    try:
+        for _ in range(50):
+            try:
+                with socket.create_connection(("127.0.0.1", tp), timeout=0.2) as term:
+                    term.settimeout(1)
+                    assert b"POCKETBOX" in term.recv(2048)
+                assert b"PocketBox" in urlopen(f"http://127.0.0.1:{hp}/", timeout=1).read()
+                break
+            except (ConnectionRefusedError, TimeoutError):
+                time.sleep(0.05)
+        else:
+            raise AssertionError("explicit loopback listener did not start")
+    finally:
+        bound.terminate()
+        bound.wait(timeout=5)
     p = subprocess.Popen(["./pocketbox", "--root", d, "--http-port", str(hp), "--telnet-port", str(tp)])
     try:
         for _ in range(50):
