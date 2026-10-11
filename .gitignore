@@ -1,0 +1,3 @@
+pocketbox
+*.o
+__pycache__/
