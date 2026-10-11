@@ -26,7 +26,7 @@ and add the toolchain bin directory to PATH. Then from the PocketBox repo:
 ```sh
 make clean
 make CC=mips-openwrt-linux-musl-gcc
-file pocketbox
+file pocketbox\npython3 openwrt/check_binary.py pocketbox --target mango
 ```
 
 The compiler prefix above is **illustrative**; inspect the actual SDK
@@ -48,3 +48,17 @@ not x86_64 or ARM. This step produces only a userspace binary, not an
 PocketBox firmware remains deliberately limited to local file services
 and the AP/LAN bridge. IIAB, Kiwix, Kolibri and similar services belong on
 a separate Ethernet-connected host.
+
+## ELF architecture check
+
+After compiling with a verified target SDK, run:
+
+```sh
+python3 openwrt/check_binary.py pocketbox --target mango
+# Or, for a WR703N-specific binary:
+python3 openwrt/check_binary.py pocketbox --target wr703n
+```
+
+This checks ELF32 MIPS, expected endianness and byte size. It does not
+validate MIPS ISA extensions, ABI, loader, linked libraries or available
+flash space. Do not treat a passing result as proof of device compatibility.
