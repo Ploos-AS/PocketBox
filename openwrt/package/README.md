@@ -9,10 +9,12 @@ and verify the actual LAN address before enabling the service.
 To stage the package in a compatible, already configured OpenWrt build tree:
 
 ```sh
-mkdir -p /path/to/openwrt/package/pocketbox/src
-cp -R openwrt/package/pocketbox/Makefile openwrt/package/pocketbox/files /path/to/openwrt/package/pocketbox/
-cp src/*.c src/*.h /path/to/openwrt/package/pocketbox/src/
+python3 openwrt/stage_package.py --openwrt-tree /path/to/openwrt
 ```
+
+The script verifies the destination and copies the package and all required
+source files. It refuses to overwrite an existing package directory. It
+does not compile, install or flash anything.
 
 From that OpenWrt build tree, select the package using menuconfig, then run
 `make package/pocketbox/compile V=s`. Verify target architecture and package
