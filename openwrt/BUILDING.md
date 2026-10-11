@@ -62,3 +62,16 @@ python3 openwrt/check_binary.py pocketbox --target wr703n
 This checks ELF32 MIPS, expected endianness and byte size. It does not
 validate MIPS ISA extensions, ABI, loader, linked libraries or available
 flash space. Do not treat a passing result as proof of device compatibility.
+
+## Generic MIPS CI smoke build (not an OpenWrt package)
+
+The `.github/workflows/mips-cross.yml` job uses Ubuntu's
+`gcc-mipsel-linux-gnu` to compile PocketBox for generic little-endian MIPS
+Linux, runs the ELF architecture check and uploads a temporary test binary.
+**That binary uses a different toolchain/runtime than the OpenWrt SDK and
+must not be installed on Mango or treated as a supported device build.**
+
+For an actual OpenWrt package, use a version-matched OpenWrt build tree and
+`openwrt/stage_package.py`; compile the package with OpenWrt's own compiler
+and confirm the resulting package's ABI and dependencies. A passing generic
+MIPS job is only a portability signal.
